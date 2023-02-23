@@ -5,7 +5,7 @@ from tqdm import tqdm
 import pandas as pd
 import nltk
 from sklearn.model_selection import train_test_split
-from transformers import OpenAIGPTLMHeadModel, OpenAIGPTTokenizerFast
+from transformers import GPT2LMHeadModel, GPT2TokenizerFast
 import random
 
 random.seed(42)
@@ -34,7 +34,7 @@ def load_enron_email_data():
     Returns:
     List of sentences from the message body of the emails.
     """
-    email_data = pd.read_csv("data/emails.csv")
+    email_data = pd.read_csv("../data/emails.csv")
     num_of_rows_original = email_data.shape[0]
     message_body_data = []
     # Determine the place to split the message body out of the whole email.
@@ -150,8 +150,8 @@ def test(model, test_loader):
 
 
 # Initialise the server model
-server = OpenAIGPTLMHeadModel.from_pretrained("openai-gpt").to(DEVICE)
-tokenizer = OpenAIGPTTokenizerFast.from_pretrained("openai-gpt", bos_token="<|startoftext|>", eos_token="<|endoftext|>",
+server = GPT2LMHeadModel.from_pretrained("gpt2").to(DEVICE)
+tokenizer = GPT2TokenizerFast.from_pretrained("gpt2", bos_token="<|startoftext|>", eos_token="<|endoftext|>",
                                           pad_token="<|pad|>")
 # Resize the token embedding of the model to match the new vocabulary size
 server.resize_token_embeddings(len(tokenizer))
@@ -162,7 +162,7 @@ client_parameters = [server_parameters] * num_of_clients
 
 data = load_enron_email_data()
 # Sample a subset to do the training to speed up the process
-sample_size = 0.5
+sample_size = 0.2
 data = random.sample(data, int(len(data) * sample_size))
 # data = data[:1000]
 for i in range(len(data)):
@@ -171,7 +171,7 @@ for i in range(len(data)):
 
 
 test_size = 0.1
-train_data, test_data = train_test_split(data, test_size=test_size, shuffle=True)
+train_data, test_data = train_test_split(data, test_size=test_size, shuffle=True, random_state=42)
 num_of_client_samples = int(len(train_data) / num_of_clients)
 clients_training_data = []
 # Split the training data into individual client training data
@@ -193,7 +193,7 @@ test_labels = test_data_inputs["input_ids"].clone()
 test_data_inputs["labels"] = test_labels
 test_loader = DataLoader(MyDataset(test_data_inputs), batch_size=128, shuffle=True)
 
-torch.save(server.state_dict(), r"./model/gpt/server_init.pt")
+torch.save(server.state_dict(), r"../model/gpt2/fed_avg_30_clients_20_percent/server_init.pt")
 #
 i = 0
 # This is for early stopping
@@ -204,7 +204,7 @@ while True:
         client = set_parameters(server, client_parameters[j])
         print(f"Round {i}, client {j}:")
         average_train_loss = train(client, train_loader=train_loaders[j], epochs=1)
-        with open(r"./results-gpt.txt", "a") as file:
+        with open(r"../results/gpt2/fed_avg_30_clients_20_percent.txt", "a") as file:
             file.write(f"Round {i}, client {j} loss: {average_train_loss}\n")
         client_parameters[j] = get_parameters(client)
 
@@ -224,10 +224,10 @@ while True:
     server_parameters = get_parameters(server)
     print(f"Round {i} server test:")
     average_test_loss = test(server, test_loader)
-    with open(r"./results-gpt.txt", "a") as file:
+    with open(r"../results/gpt2/fed_avg_30_clients_20_percent.txt", "a") as file:
         file.write(f"Round {i} server test loss: {average_test_loss}\n")
     client_parameters = [server_parameters] * num_of_clients
-    torch.save(server.state_dict(), f"./model/gpt/server_{i}.pt")
+    torch.save(server.state_dict(), f"../model/gpt2/fed_avg_30_clients_20_percent/server_{i}.pt")
     if average_test_loss > previous_average_test_loss:
         print("Early stopping")
         break
