@@ -7,12 +7,10 @@ random.seed(42)
 
 nltk.download('punkt')
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-if DEVICE == torch.device("cpu"):
-    DEVICE = torch.device("mps" if torch.has_mps else "cpu")
 
 MODEL_NAME = "gpt"
 NUM_OF_CLIENTS = 30
-SAMPLE_SIZE = 0.05
+SAMPLE_SIZE = 1
 TEST_SIZE = 0.1
 RESULTS_PATH = F"../results/{MODEL_NAME}/fed_avg_{NUM_OF_CLIENTS}_clients_{int(SAMPLE_SIZE * 100)}_percent.txt"
 MODEL_PATH = f"../model/{MODEL_NAME}/fed_avg_{NUM_OF_CLIENTS}_clients_{int(SAMPLE_SIZE * 100)}_percent"

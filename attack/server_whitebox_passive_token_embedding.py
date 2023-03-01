@@ -1,3 +1,5 @@
+import numpy as np
+
 from utils import *
 from sklearn.model_selection import train_test_split
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast, OpenAIGPTLMHeadModel, OpenAIGPTTokenizerFast
@@ -6,9 +8,7 @@ import random
 random.seed(42)
 
 nltk.download('punkt')
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-if DEVICE == torch.device("cpu"):
-    DEVICE = torch.device("mps" if torch.has_mps else "cpu")
+DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 MODEL_NAME = "gpt2"
 NUM_OF_CLIENTS = 30
@@ -16,7 +16,7 @@ SAMPLE_SIZE = 0.01
 TEST_SIZE = 0.03
 # RESULTS_PATH = F"../results/{MODEL_NAME}/fed_avg_batch_{NUM_OF_CLIENTS}_clients_{int(SAMPLE_SIZE * 100)}_percent.txt"
 # MODEL_PATH = f"../model/{MODEL_NAME}/fed_avg_batch_{NUM_OF_CLIENTS}_clients_{int(SAMPLE_SIZE * 100)}_percent"
-DATA_PATH = "../../../data/emails.csv"
+DATA_PATH = "../data/emails.csv"
 
 # Initialise the server model
 if MODEL_NAME == "gpt2":
@@ -55,7 +55,7 @@ for i in range(NUM_OF_CLIENTS):
     data_inputs = tokenizer(dataset, return_tensors="pt", padding=True, truncation=True, max_length=128)
     labels = data_inputs["input_ids"].clone()
     data_inputs["labels"] = labels
-    data_loader = DataLoader(MyDataset(data_inputs), batch_size=8, shuffle=True)
+    data_loader = DataLoader(MyDataset(data_inputs), batch_size=1, shuffle=True)
     train_loaders.append(data_loader)
     break
 
@@ -65,6 +65,13 @@ old_embeddings = client_parameters[0][0]
 client = set_parameters(server, client_parameters[0])
 loss = train_batch(client, batch, DEVICE)
 print(loss)
-updated_embeddings = get_parameters(client)[0]
-client_parameters[0] = get_parameters(client)
-gradients = updated_embeddings - old_embeddings
+grads = []
+for param in client.parameters():
+    grads.append(param.grad)
+# updated_embeddings = get_parameters(client)[0]
+# gradients = updated_embeddings - old_embeddings
+# gradients = np.absolute(gradients)
+
+token_grads = np.absolute(grads[0].clone().detach().numpy())
+token_gradient_sum = np.sum(token_grads, axis=1)
+token_gradient_indexes = np.argsort(token_gradient_sum)[::-1]

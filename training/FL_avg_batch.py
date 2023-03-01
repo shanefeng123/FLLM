@@ -7,8 +7,6 @@ random.seed(42)
 
 nltk.download('punkt')
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-if DEVICE == torch.device("cpu"):
-    DEVICE = torch.device("mps" if torch.has_mps else "cpu")
 
 MODEL_NAME = "gpt2"
 NUM_OF_CLIENTS = 30
@@ -38,7 +36,6 @@ client_parameters = initialise_client_parameters(server_parameters, NUM_OF_CLIEN
 data = load_enron_email_data(DATA_PATH)
 # Sample a subset to do the training to speed up the process
 data = random.sample(data, int(len(data) * SAMPLE_SIZE))
-# data = data[:1000]
 # Append the start and end tokens
 for i in range(len(data)):
     data[i] = "<|startoftext|>" + data[i] + "<|endoftext|>"

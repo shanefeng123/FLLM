@@ -16,7 +16,7 @@ def load_enron_email_data():
     Returns:
     List of sentences from the message body of the emails.
     """
-    email_data = pd.read_csv("../../../data/emails.csv")
+    email_data = pd.read_csv("../data/emails.csv")
     num_of_rows_original = email_data.shape[0]
     message_body_data = []
     # Determine the place to split the message body out of the whole email.
