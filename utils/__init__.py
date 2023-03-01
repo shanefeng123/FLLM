@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import pandas as pd
 import nltk
+import numpy as np
 
 
 class MyDataset(torch.utils.data.Dataset):
@@ -60,12 +61,28 @@ def get_parameters(model):
     """
     Get the parameters of a model.
     Args:
-        model: A neural network models with parameters.
+        model: A neural network model with parameters.
 
     Returns:
-        A list of parameters of the model.
+        A deep copy list of parameters of the model.
     """
-    return [val.cpu().numpy() for _, val in model.state_dict().items()]
+    return [val.clone().detach().cpu().numpy() for _, val in model.state_dict().items()]
+
+
+def initialise_client_parameters(server_parameters, num_of_clients):
+    """
+    Initialise the parameters of the clients.
+    Args:
+        server_parameters: The parameters of the server model.
+        num_of_clients: The number of clients.
+
+    Returns:
+        A list of parameters for the clients.
+    """
+    client_parameters = []
+    for i in range(num_of_clients):
+        client_parameters.append([np.copy(p) for p in server_parameters])
+    return client_parameters
 
 
 def set_parameters(model, parameters):
@@ -179,3 +196,16 @@ def aggregate_parameters(server, client_parameters):
     for j in range(len(aggregated_parameters)):
         aggregated_parameters[j] /= len(client_parameters)
     return aggregated_parameters
+
+
+def cosine_similarity(vector_a, vector_b):
+    """
+    Calculate the cosine similarity between two vectors.
+    Args:
+        vector_a: A vector.
+        vector_b: Another vector.
+
+    Returns:
+        The cosine similarity between the two vectors.
+    """
+    return np.dot(vector_a, vector_b) / (np.linalg.norm(vector_a) * np.linalg.norm(vector_b))

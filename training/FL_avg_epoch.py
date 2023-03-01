@@ -32,7 +32,7 @@ else:
 server.resize_token_embeddings(len(tokenizer))
 server_parameters = get_parameters(server)
 # Initialise client models
-client_parameters = [server_parameters] * NUM_OF_CLIENTS
+client_parameters = initialise_client_parameters(server_parameters, NUM_OF_CLIENTS)
 # Load the data
 data = load_enron_email_data(DATA_PATH)
 # Sample a subset to do the training to speed up the process
@@ -91,7 +91,7 @@ while True:
     average_test_loss = test(server, test_loader, device=DEVICE)
     with open(f"{RESULTS_PATH}", "a") as file:
         file.write(f"Round {i} server test loss: {average_test_loss}\n")
-    client_parameters = [server_parameters] * NUM_OF_CLIENTS
+    client_parameters = initialise_client_parameters(server_parameters, NUM_OF_CLIENTS)
     torch.save(server.state_dict(), f"{MODEL_PATH}/server_{i}.pt")
     if average_test_loss > min_test_loss:
         patience_count += 1
