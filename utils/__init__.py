@@ -149,11 +149,12 @@ def train_batch(model, batch, device):
     input_ids = batch["input_ids"].to(device)
     attention_mask = batch["attention_mask"].to(device)
     labels = batch["labels"].to(device)
-    train_outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+    train_outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels, output_attentions=True)
+    attentions = train_outputs.attentions
     batch_loss = train_outputs.loss
     batch_loss.backward()
     optimizer.step()
-    return batch_loss.item()
+    return batch_loss.item(), attentions
 
 
 def test(model, test_loader, device):

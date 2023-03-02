@@ -63,15 +63,15 @@ batch = train_loaders[0].__iter__().__next__()
 batch_input_ids = batch["input_ids"].tolist()
 old_embeddings = client_parameters[0][0]
 client = set_parameters(server, client_parameters[0])
-loss = train_batch(client, batch, DEVICE)
+loss, attentions = train_batch(client, batch, DEVICE)
 print(loss)
-grads = []
-for param in client.parameters():
-    grads.append(param.grad)
+grads = {}
+for name, param in client.named_parameters():
+    grads[name] = param.grad
 # updated_embeddings = get_parameters(client)[0]
 # gradients = updated_embeddings - old_embeddings
 # gradients = np.absolute(gradients)
 
-token_grads = np.absolute(grads[0].clone().detach().numpy())
-token_gradient_sum = np.sum(token_grads, axis=1)
-token_gradient_indexes = np.argsort(token_gradient_sum)[::-1]
+# token_grads = np.absolute(grads[0].clone().detach().numpy())
+# token_gradient_sum = np.sum(token_grads, axis=1)
+# token_gradient_indexes = np.argsort(token_gradient_sum)[::-1]
