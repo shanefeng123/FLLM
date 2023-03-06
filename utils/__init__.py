@@ -210,3 +210,13 @@ def cosine_similarity(vector_a, vector_b):
         The cosine similarity between the two vectors.
     """
     return np.dot(vector_a, vector_b) / (np.linalg.norm(vector_a) * np.linalg.norm(vector_b))
+
+
+def generate(sentence, model, tokenizer, device):
+    data = f"<|startoftext|>{sentence}"
+    input = tokenizer(data, return_tensors="pt")
+    input_ids = input["input_ids"].to(device)
+    attention_mask = input["attention_mask"].to(device)
+    generated = model.generate(input_ids=input_ids, attention_mask=attention_mask, max_length=128,
+                               pad_token_id=tokenizer.eos_token_id)
+    return generated
