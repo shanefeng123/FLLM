@@ -1,5 +1,3 @@
-import numpy as np
-
 from utils import *
 from sklearn.model_selection import train_test_split
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast, OpenAIGPTLMHeadModel, OpenAIGPTTokenizerFast
@@ -8,14 +6,12 @@ import random
 random.seed(42)
 
 nltk.download('punkt')
-DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 MODEL_NAME = "gpt2"
 NUM_OF_CLIENTS = 30
 SAMPLE_SIZE = 0.01
 TEST_SIZE = 0.03
-# RESULTS_PATH = F"../results/{MODEL_NAME}/fed_avg_batch_{NUM_OF_CLIENTS}_clients_{int(SAMPLE_SIZE * 100)}_percent.txt"
-# MODEL_PATH = f"../model/{MODEL_NAME}/fed_avg_batch_{NUM_OF_CLIENTS}_clients_{int(SAMPLE_SIZE * 100)}_percent"
 DATA_PATH = "../data/emails.csv"
 
 # Initialise the server model
@@ -55,23 +51,34 @@ for i in range(NUM_OF_CLIENTS):
     data_inputs = tokenizer(dataset, return_tensors="pt", padding=True, truncation=True, max_length=128)
     labels = data_inputs["input_ids"].clone()
     data_inputs["labels"] = labels
+    # Set batch size as 1 for initial experiment
     data_loader = DataLoader(MyDataset(data_inputs), batch_size=1, shuffle=True)
     train_loaders.append(data_loader)
     break
-
+# Get the first batch of the first client, which only contains 1 sample
 batch = train_loaders[0].__iter__().__next__()
-batch_input_ids = batch["input_ids"].tolist()
-old_embeddings = client_parameters[0][0]
+batch_input_ids = [i for i in batch["input_ids"].tolist()[0] if i != 50258]
+batch_input_ids.append(50258)
 client = set_parameters(server, client_parameters[0])
+# Train the model with this first batch only
 loss, attentions = train_batch(client, batch, DEVICE)
 print(loss)
+# Collect all the gradients
 grads = {}
 for name, param in client.named_parameters():
     grads[name] = param.grad
-# updated_embeddings = get_parameters(client)[0]
-# gradients = updated_embeddings - old_embeddings
-# gradients = np.absolute(gradients)
 
-# token_grads = np.absolute(grads[0].clone().detach().numpy())
-# token_gradient_sum = np.sum(token_grads, axis=1)
-# token_gradient_indexes = np.argsort(token_gradient_sum)[::-1]
+# Get the token embedding gradients, sum up the absolute values of the gradients for each token
+token_grads = np.absolute(grads['transformer.wte.weight'].clone().detach().numpy())
+token_gradient_sum = np.sum(token_grads, axis=1)
+# Get the token ids that have a gradient sum greater than 1
+token_ids_extracted = np.where(token_gradient_sum > 1)[0].tolist()
+# Verify that the token ids extracted are in the batch
+token_ids_used = []
+for token_id in token_ids_extracted:
+    if token_id in batch_input_ids:
+        token_ids_used.append(1)
+    else:
+        token_ids_used.append(0)
+
+print(len(token_ids_used) == len(set(batch_input_ids)))
