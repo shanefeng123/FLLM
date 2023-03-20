@@ -141,7 +141,7 @@ def train_batch(model, batch, device):
         device: The device to run the model on
 
     Returns:
-        The batch training loss
+        The batch training loss and the attention scores
     """
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
     model.train()
@@ -149,12 +149,13 @@ def train_batch(model, batch, device):
     input_ids = batch["input_ids"].to(device)
     attention_mask = batch["attention_mask"].to(device)
     labels = batch["labels"].to(device)
-    train_outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels, output_attentions=True)
+    train_outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels, output_attentions=True,
+                          output_hidden_states=True)
     attentions = train_outputs.attentions
     batch_loss = train_outputs.loss
     batch_loss.backward()
     optimizer.step()
-    return batch_loss.item(), attentions
+    return batch_loss.item(), attentions, train_outputs.hidden_states, train_outputs.logits
 
 
 def test(model, test_loader, device):
@@ -182,6 +183,27 @@ def test(model, test_loader, device):
         average_epoch_loss = epoch_test_loss / len(test_loop)
         print(f"Epoch Average test loss: {average_epoch_loss}")
     return average_epoch_loss
+
+
+def test_batch(model, batch, device):
+    """
+    Test the model with batch data.
+    Args:
+        model: The model to be tested
+        batch: The batch data
+        device: The device to run the model on
+
+    Returns:
+        The batch testing loss and the attention scores
+    """
+    model.eval()
+    input_ids = batch["input_ids"].to(device)
+    attention_mask = batch["attention_mask"].to(device)
+    labels = batch["labels"].to(device)
+    test_outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels,
+                         output_attentions=True)
+    test_loss = test_outputs.loss
+    return test_loss.item(), test_outputs.attentions
 
 
 def aggregate_parameters(server, client_parameters):

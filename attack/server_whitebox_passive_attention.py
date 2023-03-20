@@ -51,40 +51,40 @@ for i in range(NUM_OF_CLIENTS):
     data_inputs = tokenizer(dataset, return_tensors="pt", padding=True, truncation=True, max_length=128)
     labels = data_inputs["input_ids"].clone()
     data_inputs["labels"] = labels
-    # Set batch size as 1 for initial experiment
-    data_loader = DataLoader(MyDataset(data_inputs), batch_size=1, shuffle=True)
+    # Set batch size as 1 for initial experiment. Turn off shuffle for reproducibility
+    data_loader = DataLoader(MyDataset(data_inputs), batch_size=1, shuffle=False)
     train_loaders.append(data_loader)
     break
 # Get the first batch of the first client, which only contains 1 sample
-batch = train_loaders[0].__iter__().__next__()
-batch_input_ids = [i for i in batch["input_ids"].tolist()[0] if i != 50258]
-batch_input_ids.append(50258)
+training_batch = train_loaders[0].__iter__().__next__()
+training_batch_input_ids = [i for i in training_batch["input_ids"].tolist()[0] if i != 50258]
+training_batch_input_ids.append(50258)
+decoded_training_sample = tokenizer.decode(training_batch_input_ids)
+testing_sample = "This email informs you"
+testing_batch = tokenizer(testing_sample, return_tensors="pt", padding=True, truncation=True, max_length=128)
+testing_batch["labels"] = testing_batch["input_ids"].clone()
+testing_batch_ids = [i for i in testing_batch["input_ids"].tolist()[0] if i != 50258]
+testing_batch_ids.append(50258)
+decoded_testing_sample = tokenizer.decode(testing_batch_ids)
 client = set_parameters(server, client_parameters[0])
-# Freeze the token embedding parameters
-for param in client.transformer.wte.parameters():
-    param.requires_grad = False
-# Train the model with this first batch only
-loss, attentions = train_batch(client, batch, DEVICE)
-print(loss)
-# Collect all the gradients
-grads = {}
-for name, param in client.named_parameters():
-    grads[name] = param.grad
 
-# Get the token embedding gradients, sum up the absolute values of the gradients for each token
-# token_grads = np.absolute(grads['transformer.wte.weight'].clone().detach().numpy())
-# token_gradient_sum = np.sum(token_grads, axis=1)
-# # Get the token ids that have a gradient sum greater than 1
-# token_ids_extracted = np.where(token_gradient_sum > 1)[0].tolist()
-# # Verify that the token ids extracted are in the batch
-# token_ids_used = []
-# for token_id in token_ids_extracted:
-#     if token_id in batch_input_ids:
-#         token_ids_used.append(1)
-#     else:
-#         token_ids_used.append(0)
-#
-# print(len(token_ids_used) == len(set(batch_input_ids)))
-# token_embedding = client.transformer.wte.weight.clone().detach().numpy()
-# attn_grads = grads['transformer.h.0.attn.c_attn.weight'].clone().detach().numpy()
-# results = np.sum(token_embedding @ attn_grads, axis=1)
+_, attention = test_batch(client, testing_batch, DEVICE)
+old_attn_scores = attention[0][0, :, :, :].detach().cpu().numpy()
+_, _ = train_batch(client, training_batch, DEVICE)
+_, attention = test_batch(client, testing_batch, DEVICE)
+new_attn_scores = attention[0][0, :, :, :].detach().cpu().numpy()
+# Collect all the gradients
+# grads = {}
+# for name, param in client.named_parameters():
+#     grads[name] = param.grad
+# # Get the first attention weights
+# first_attn_grads = grads["transformer.h.0.attn.c_attn.weight"]
+# # Reshape to Q, K, V
+# first_attn_grads = first_attn_grads.reshape(3, 768, 768)
+# Q_grads = first_attn_grads[0]
+# K_grads = first_attn_grads[1]
+# V_grads = first_attn_grads[2]
+# # Reshape to (num_heads, seq_len, head_dim)
+# Q_grads = Q_grads.reshape(12, 768, 64)
+# K_grads = K_grads.reshape(12, 768, 64)
+# V_grads = V_grads.reshape(12, 768, 64)
