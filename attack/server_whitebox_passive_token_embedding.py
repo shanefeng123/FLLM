@@ -1,3 +1,5 @@
+from collections import Counter
+
 from utils import *
 from sklearn.model_selection import train_test_split
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast, OpenAIGPTLMHeadModel, OpenAIGPTTokenizerFast
@@ -7,12 +9,8 @@ random.seed(42)
 
 nltk.download('punkt')
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 MODEL_NAME = "gpt2"
 NUM_OF_CLIENTS = 30
-SAMPLE_SIZE = 0.01
-TEST_SIZE = 0.03
-DATA_PATH = "../data/emails.csv"
 
 # Initialise the server model
 if MODEL_NAME == "gpt2":
@@ -21,70 +19,51 @@ if MODEL_NAME == "gpt2":
                                                   pad_token="<|pad|>")
 else:
     server = OpenAIGPTLMHeadModel.from_pretrained("openai-gpt").to(DEVICE)
-    tokenizer = OpenAIGPTTokenizerFast.from_pretrained("openai-gpt", bos_token="<|startoftext|>", eos_token="<|endoftext|>",
-                                                   pad_token="<|pad|>")
+    tokenizer = OpenAIGPTTokenizerFast.from_pretrained("openai-gpt", bos_token="<|startoftext|>",
+                                                       eos_token="<|endoftext|>",
+                                                       pad_token="<|pad|>")
 
 # Resize the token embedding of the model to match the new vocabulary size
 server.resize_token_embeddings(len(tokenizer))
 server_parameters = get_parameters(server)
 # Initialise client models
-client_parameters = initialise_client_parameters(server_parameters, NUM_OF_CLIENTS)
-# Load the data
-data = load_enron_email_data(DATA_PATH)
-# Sample a subset to do the training to speed up the process
-data = random.sample(data, int(len(data) * SAMPLE_SIZE))
-# Append the start and end tokens
-for i in range(len(data)):
-    data[i] = "<|startoftext|>" + data[i] + "<|endoftext|>"
-# Split the data into training and testing
-train_data, test_data = train_test_split(data, test_size=TEST_SIZE, shuffle=True, random_state=42)
-num_of_client_samples = int(len(train_data) / NUM_OF_CLIENTS)
-clients_training_data = []
-# Split the training data into individual client training data
-for i in range(NUM_OF_CLIENTS):
-    clients_training_data.append(train_data[i * num_of_client_samples:(i + 1) * num_of_client_samples])
-
-train_loaders = []
-for i in range(NUM_OF_CLIENTS):
-    dataset = clients_training_data[i]
-    # Max length 128 would leave about 3 percent of the sentences truncated
-    data_inputs = tokenizer(dataset, return_tensors="pt", padding=True, truncation=True, max_length=128)
-    labels = data_inputs["input_ids"].clone()
-    data_inputs["labels"] = labels
-    # Set batch size as 1 for initial experiment
-    data_loader = DataLoader(MyDataset(data_inputs), batch_size=1, shuffle=True)
-    train_loaders.append(data_loader)
-    break
-# Get the first batch of the first client, which only contains 1 sample
-batch = train_loaders[0].__iter__().__next__()
-batch_input_ids = [i for i in batch["input_ids"].tolist()[0] if i != 50258]
-batch_input_ids.append(50258)
-client = set_parameters(server, client_parameters[0])
-# Freeze the token embedding parameters
-for param in client.transformer.wte.parameters():
-    param.requires_grad = False
-# Train the model with this first batch only
-loss, attentions = train_batch(client, batch, DEVICE)
-print(loss)
-# Collect all the gradients
-grads = {}
+client = set_parameters(server, server_parameters)
+# Create some toy train data to demonstrate the attack
+data = ["<|startoftext|>I love love love<|endoftext|>", "<|startoftext|>I hate hate hate<|endoftext|>",
+        "<|startoftext|>I love and hate you<|endoftext|>"]
+train_data = tokenizer(data, return_tensors="pt", padding=True,
+                       truncation=True, max_length=8)
+train_data["labels"] = train_data["input_ids"].clone()
+# Train the client model with the toy train data
+loss, attentions, hidden_states, logits = train_batch(client, train_data, DEVICE)
+# # Collect all layer gradients
+original_grads_name = {}
 for name, param in client.named_parameters():
-    grads[name] = param.grad
+    original_grads_name[name] = param.grad
+# Get the token embedding layer gradients
+token_grads = original_grads_name['transformer.wte.weight'].clone().detach()
+# Start the attack
+token_list = []
+# Because the server would know how many tokens in a sentence, and how many sentence in a batch.
+# We can just calculate how many tokens there should be in a batch
+num_missing_tokens = train_data["input_ids"].shape[0] * train_data["input_ids"].shape[1]
+# Calculate the magnitude of each token embedding with L2 norm. The result is a vector with the same length as the vocabulary size
+token_grads_norm = torch.linalg.vector_norm(token_grads, dim=1)
+# If the magnitude of a token embedding is greater than 1, we can add it to the token list
+valid_classes = np.where(token_grads_norm.numpy() > 1)[0].tolist()
+token_list += [*valid_classes]
+# This is the naive part. We just assume that the impact for each occurrence of a token is the same,
+# so that we can just calculate it by dividing the total magnitude of gradients by the number of missing tokens.
+m_impact = token_grads_norm[valid_classes].sum() / num_missing_tokens
+token_grads_norm[valid_classes] = token_grads_norm[valid_classes] - m_impact
 
-# Get the token embedding gradients, sum up the absolute values of the gradients for each token
-# token_grads = np.absolute(grads['transformer.wte.weight'].clone().detach().numpy())
-# token_gradient_sum = np.sum(token_grads, axis=1)
-# # Get the token ids that have a gradient sum greater than 1
-# token_ids_extracted = np.where(token_gradient_sum > 1)[0].tolist()
-# # Verify that the token ids extracted are in the batch
-# token_ids_used = []
-# for token_id in token_ids_extracted:
-#     if token_id in batch_input_ids:
-#         token_ids_used.append(1)
-#     else:
-#         token_ids_used.append(0)
-#
-# print(len(token_ids_used) == len(set(batch_input_ids)))
-# token_embedding = client.transformer.wte.weight.clone().detach().numpy()
-# attn_grads = grads['transformer.h.0.attn.c_attn.weight'].clone().detach().numpy()
-# results = np.sum(token_embedding @ attn_grads, axis=1)
+# Stage 2
+# Get the token that has the largest magnitude, add it to the list, then subtract it with the impact value
+# Do this until we reach the number of missing tokens
+while len(token_list) < num_missing_tokens:
+    selected_idx = valid_classes[token_grads_norm[valid_classes].argmax()]
+    token_list.append(selected_idx)
+    token_grads_norm[selected_idx] -= m_impact
+
+print(Counter(torch.flatten(train_data["input_ids"]).tolist()))
+print(Counter(token_list))
