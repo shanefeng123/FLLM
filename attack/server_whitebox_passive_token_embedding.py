@@ -54,16 +54,17 @@ valid_classes = np.where(token_grads_norm.numpy() > 1)[0].tolist()
 token_list += [*valid_classes]
 # This is the naive part. We just assume that the impact for each occurrence of a token is the same,
 # so that we can just calculate it by dividing the total magnitude of gradients by the number of missing tokens.
-m_impact = token_grads_norm[valid_classes].sum() / num_missing_tokens
-token_grads_norm[valid_classes] = token_grads_norm[valid_classes] - m_impact
+log_token_grads_norm = torch.log(token_grads_norm)
+m_impact = log_token_grads_norm[valid_classes].sum() / num_missing_tokens
+log_token_grads_norm[valid_classes] = log_token_grads_norm[valid_classes] - m_impact
 
 # Stage 2
 # Get the token that has the largest magnitude, add it to the list, then subtract it with the impact value
 # Do this until we reach the number of missing tokens
 while len(token_list) < num_missing_tokens:
-    selected_idx = valid_classes[token_grads_norm[valid_classes].argmax()]
+    selected_idx = valid_classes[log_token_grads_norm[valid_classes].argmax()]
     token_list.append(selected_idx)
-    token_grads_norm[selected_idx] -= m_impact
+    log_token_grads_norm[selected_idx] -= m_impact
 
 print(Counter(torch.flatten(train_data["input_ids"]).tolist()))
 print(Counter(token_list))
